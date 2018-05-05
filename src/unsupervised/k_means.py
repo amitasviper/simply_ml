@@ -1,102 +1,112 @@
 import numpy as np
 import math, random
-from matplotlib import pyplot as plt
-plt.style.use('ggplot')
 
 MAX_DISTANCE = np.finfo(np.float64).max
 
-from utils import DataSample 
-
 class KMeans(object):
-	def __init__(self, n_clusters=3, iterations=30):
+	def __init__(self, n_clusters=3, iterations=30, live_plot=False):
 		self.n_clusters = n_clusters
 		self.iterations = iterations
-		self.data_dimension = 0
+		self.live_plot = live_plot
 
-	def fit(self, data_sample):
-		self.data_sample = data_sample
-		self.data_dimension = len(self.data_sample[0]['x'])
-		self._setDefaultMeans()
+		if self.live_plot:
+			global plt
+			from matplotlib import pyplot as plt
+			plt.style.use('ggplot')
+
+	def predict(self, X):
+		centroids = self._setRandomCentroids(X)
 		for iter_n in range(self.iterations):
-			self._train(iter_n)
+			# Cluster is an array of arrays in which each array contains indices of the points belonging to that cluster
+			clusters = self._createClusters(X, centroids)
 
-	def _setDefaultMeans(self):
-		self.means = []
+			centroids = self._adjustCentroids(X, clusters)
+			if self.live_plot:
+				self._prepareDataNShow(X, centroids, clusters, iter_n == (self.iterations-1))
+
+		return self._getPredictedLabels(X, clusters)
+
+	def _getPredictedLabels(self, X, clusters):
+		predicted_labels = np.zeros(X.shape[0], dtype=np.int)
+		for cluster_index, cluster in enumerate(clusters):
+			predicted_labels[cluster] = cluster_index
+		return predicted_labels
+
+
+	def _setRandomCentroids(self, X):
+		n_samples, n_features = np.shape(X)
+		centroids = np.zeros((self.n_clusters, n_features))
 		for i in range(self.n_clusters):
-			mean_info = {'label': i, 'mean': np.random.rand(self.data_dimension)}
-			self.means.append(mean_info)
-		plt.show()
+			centroid = X[np.random.random_integers(0, n_samples-1)]
+			centroids[i] = centroid
+		return centroids
 
-	def _getDataDimensionsSumStruct(self):
-		data_dim_sum = {}
-		for i in range(self.n_clusters):
-			data_dim_sum[self.means[i]['label']] = [np.zeros(self.data_dimension), 0]
-		return data_dim_sum
+	def _createClusters(self, X, centroids):
+		clusters = [[] for _ in range(self.n_clusters)]
+		for sample_index, sample in enumerate(X):
+			closest_centroid_index = self._getClosestCentroid(sample, centroids)
+			clusters[closest_centroid_index].append(sample_index)
+		return clusters
 
 
-	def _train(self, iteration):
-		data_points_sum = self._getDataDimensionsSumStruct()
-		colors = ['red', 'green', 'blue', 'purple', 'yellow']
-		x_points = []
-		y_points = []
-		size = []
-		color_points = []
-		for data_point in self.data_sample:
-			x = data_point['x']
-			mean_label = self._getClosestMean(x)
-			data_point['target'] = mean_label
-			# print "Previous value : ", data_points_sum[mean_label][0]
-			# print "Adding x : ", x
-			data_points_sum[mean_label][0] += x
-			data_points_sum[mean_label][1] += 1
-			# print data_points_sum
-			x_points.append(x[0])
-			y_points.append(x[1])
-			color_points.append(colors[mean_label])
-			size.append(2**2)
+	def _getClosestCentroid(self, data_point, centroids):
+		closest_distance = MAX_DISTANCE
+		closest_centroid_index = 0
+		for index, centroid in enumerate(centroids):
+			distance = self._getEuclideanDistance(data_point, centroid)
+			if distance < closest_distance:
+				closest_distance = distance
+				closest_centroid_index = index
+		return closest_centroid_index
 
-		adjusted_means = []
-		clustered_data_points = []
-		for i in range(self.n_clusters):
-			# print "Hello : ", (data_points_sum[self.means[i]['label']][0] / (1.0 * data_points_sum[self.means[i]['label']][1]))
-			if data_points_sum[self.means[i]['label']][1] != 0:
-				self.means[i]['mean'] = (data_points_sum[self.means[i]['label']][0] / (1.0 * data_points_sum[self.means[i]['label']][1]))
-			x_points.append(self.means[i]['mean'][0])
-			y_points.append(self.means[i]['mean'][1])
-			color_points.append(colors[self.means[i]['label']])
-			size.append(2**6)
+	def _getEuclideanDistance(self, point_1, point_2):
+		return np.sqrt(np.sum((point_1 - point_2)**2))
 
-		print len(x_points)
-		# print x_points
-		# plt.scatter(x_points, y_points, c=color_points, s=size)
-		# plt.show()
+	def _adjustCentroids(self, X, clusters):
+		n_samples, n_features = np.shape(X)
+		new_centroids = np.zeros((self.n_clusters, n_features))
+		for cluster_index, cluster in enumerate(clusters):
+			new_centroid = np.mean(X[cluster], axis=0)
+			new_centroids[cluster_index] = new_centroid
+		return new_centroids
+
+	def _prepareDataNShow(self, X, centroids, clusters, continue_showing):
+		rows, columns = X.shape
+		if columns < 2:
+			print "There should be atleast two features in the data for scatter plot"
+			return False
+		feature_one = X[:,0]
+		feature_two = X[:,1]
+
+		point_colors = np.zeros(rows)
+		point_sizes = np.ones(rows) * (2**4)
+
+		for cluster_index, cluster in enumerate(clusters):
+			point_colors[cluster] = (cluster_index + 3) * 1.0
+
+		centroid_feature_one = centroids[:, 0]
+		centroid_feature_two = centroids[:, 1]
+
+		feature_one = np.concatenate([feature_one, centroid_feature_one])
+		feature_two = np.concatenate([feature_two, centroid_feature_two])
+
+		point_colors = np.concatenate([point_colors, [ i * 1.0 for i in range(3, self.n_clusters + 3)]])
+		point_sizes = np.concatenate([point_sizes, [2**6] * self.n_clusters])
+
+		self._showLivePlot(feature_one, feature_two, point_colors, point_sizes, continue_showing)
+
+
+	def _showLivePlot(self, feature_one, feature_two, point_colors, point_sizes, continue_showing=False):
+		if not self.live_plot:
+			return False
+
 		fig = plt.figure()
-		ax1 = fig.add_subplot(111)
-		ax1.scatter(x_points, y_points, c=color_points, s=size)
-
-
+		axis = fig.add_subplot(111)
+		axis.scatter(feature_one, feature_two, c=point_colors, s=point_sizes, alpha = 1.0)
 		plt.tight_layout()
-
 		plt.draw()
-		plt.pause(0.4)
-		plt.close(fig)
-
-
-
-
-	def _getClosestMean(self, x):
-		distance = MAX_DISTANCE
-		closest_mean = 0
-		for i in range(len(self.means)):
-			dist = self._getDistance(x, self.means[i]['mean'])
-			if dist < distance:
-				distance = dist
-				closest_mean = self.means[i]['label']
-		return closest_mean
-
-
-	def _getDistance(self, point_1, point_2):
-		return np.linalg.norm(point_1 - point_2)
-
-	def predict(self, data_sample):
-		pass
+		plt.pause(0.1)
+		if continue_showing:
+			plt.show()
+		else:
+			plt.close(fig)

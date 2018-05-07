@@ -4,7 +4,7 @@ class LossFunction(object):
 	def __call__(self, y_actual, y_preficted):
 		raise NotImplementedError()
 
-	def gradient(self, y_actual, y_preficted):s
+	def gradient(self, y_actual, y_preficted):
 		raise NotImplementedError()
 
 class SquaredLoss(LossFunction):
